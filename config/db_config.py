@@ -39,9 +39,6 @@ def create_table_merchant(connection, cursor):
             merchant_url VARCHAR(255) NOT NULL,
             name VARCHAR(255) NOT NULL,
             api_key uuid NOT NULL,
-            email VARCHAR(255) NOT NULL,
-            phone_number VARCHAR(20),
-            address VARCHAR(255),
             PRIMARY KEY (merchant_id),
             UNIQUE(api_key)
         )
@@ -57,8 +54,8 @@ def create_table_account(connection, cursor):
         CREATE TABLE IF NOT EXISTS {table_name} (
             account_id uuid DEFAULT uuid_generate_v4 (),  
             type VARCHAR(50) NOT NULL,
-            balance FLOAT NOT NULL,
-            description VARCHAR(255) NOT NULL,
+            balance FLOAT DEFAULT 0,
+            description VARCHAR(255),
             merchant_id uuid,
             PRIMARY KEY (account_id),
             CONSTRAINT fk_merchant 
@@ -75,16 +72,18 @@ def create_table_transaction(connection, cursor):
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
         CREATE TABLE IF NOT EXISTS {table_name} (
             transaction_id uuid DEFAULT uuid_generate_v4 (),  
-            account_id uuid,
-            order_id VARCHAR(255) NOT NULL,
-            status VARCHAR(50) NOT NULL,
-            signature VARCHAR(255),
+            merchant_id uuid,
+            income_account_id uuid,
+            outcome_account_id uuid,
             amount FLOAT NOT NULL,
-            extra_data VARCHAR(255) NOT NULL,
-            PRIMARY KEY (transaction_id),
-            CONSTRAINT fk_account 
-                FOREIGN KEY(account_id) 
-	            REFERENCES accounts(account_id) 
+            extra_data VARCHAR(255),
+            signature VARCHAR(255),
+            status VARCHAR(50) NOT NULL,
+
+            PRIMARY KEY (transaction_id), 
+            CONSTRAINT fk_merchant 
+                FOREIGN KEY(merchant_id) 
+	            REFERENCES merchants(merchant_id) 
         )
         """
     cursor.execute(sql_str)

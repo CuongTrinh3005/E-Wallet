@@ -3,7 +3,8 @@ request_methods = {
     'GET_METHOD':[
         {
             'root': '/',
-            'get_all_merchants': '/merchants'
+            'get_all_merchants': '/merchants',
+            'account_token': '/account/token'
         }
     ],
     'POST_METHOD': [

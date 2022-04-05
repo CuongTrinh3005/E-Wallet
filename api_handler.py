@@ -4,54 +4,83 @@ import socketserver
 from typing import Tuple
 from http import HTTPStatus
 from config.api_config import request_methods
+from config.db_config import connect
+from services.account_services import generate_jwt, insert_account, insert_account_without_merchant
+from services.merchant_services import insert_merchant
+from enums.TypeEnum import TypeEnum
+from utils.url_extractor import extract_account_id_in_url
 
 def dump_response(dict_data):
     output_json = json.dumps(dict_data)
     return output_json.encode('utf-8')
 
+def get_connection_and_cursor():
+    return connect()
+
+def serialize_sets(obj):
+    if isinstance(obj, set):
+        return list(obj)
+
+    return obj
+
 class APIHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, request: bytes, client_address: Tuple[str, int], server: socketserver.BaseServer):
         super().__init__(request, client_address, server)
-
-    # @property
-    # def api_response(self, data):
-    #     return json.dumps(data).encode()
-
+    
     def do_GET(self):
-        get_requests_dict = request_methods['GET_METHOD'][0]
-        get_requests = list(get_requests_dict.values()) 
-        if self.path in get_requests:
-            if self.path == get_requests_dict['root']:
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
+        # get_requests_dict = request_methods['GET_METHOD'][0]
+        # get_requests = list(get_requests_dict.values()) 
+        # if self.path in get_requests:
+        # if self.path == get_requests_dict['root']:
+        if self.path == '/':
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
 
-                response = {
-                    "status": "OK",
-                    "message": "Hello World! My name is Trinh Quoc Cuong"
-                }
-                self.wfile.write(dump_response(response))
+            response = {
+                "status": "OK",
+                "message": "Hello World! My name is Trinh Quoc Cuong"
+            }
+            self.wfile.write(dump_response(response))
 
-            elif self.path == get_requests_dict['get_all_merchants']:
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
+        # elif self.path == get_requests_dict['get_all_merchants']:
+        elif self.path == "/merchants":
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
 
-                response = {
-                    "status": "OK",
-                    "message": "Get all merchants"
-                }
-                self.wfile.write(dump_response(response))
+            response = {
+                "status": "OK",
+                "message": "Get all merchants"
+            }
+            self.wfile.write(dump_response(response))
+
+        elif self.path.find('account') > -1 and self.path.find('token') > -1:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+
+            account_id = extract_account_id_in_url(self.path)
+            jwt_token_list = generate_jwt(account_id)
+            # response = {
+            #     # "token": jwt_token
+            #     jwt_token
+            # }
+            self.wfile.write(bytes(jwt_token_list, 'utf-8'))
 
 
     def do_POST(self):
         post_requests_dict = request_methods['POST_METHOD'][0]
         post_requests = list(post_requests_dict.values()) 
+
         if self.path in post_requests:
             if self.path == post_requests_dict['merchant_signup']:
                 # - request -
                 input_data = self.get_data_sent()
                 print(f'\nInput data: {input_data}\n')
+                connection, cursor = get_connection_and_cursor()
+                merchant_id, api_key = insert_merchant(connection, cursor, input_data['merchantName'], input_data['merchantUrl'])
+                account_id = insert_account(connection, cursor, TypeEnum.Merchant.value, '', merchant_id)
 
                 # - response -
                 self.send_response(200)
@@ -59,18 +88,26 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 
                 output_data = {
-                    "merchantName": "1e7f588e-ad4e-436e-b8f5-4a0dd3416b19",
-                    "accountId": "e5cc7ef9-8da1-4ca9-9df5-46cc08c98760",
-                    "merchantId": "dd6de58e-fc7b-4138-bb4a-bd70be05689a",
-                    "apiKey": "bdd6a784-0da5-45da-a83c-7bbe1d34db35",
-                    "merchantUrl": "http://localhost:8080"
+                    "merchantName": input_data['merchantName'],
+                    "accountId": account_id,
+                    "merchantId": merchant_id,
+                    "apiKey": api_key,
+                    "merchantUrl": input_data['merchantUrl']
                 }
                 self.wfile.write(dump_response(output_data))
                 # self.send_response(output_data)
 
             elif self.path == post_requests_dict['create_account']:
+                connection, cursor = get_connection_and_cursor()
                 input_data = self.get_data_sent()
                 print(f'\nInput data: {input_data}\n')
+                account_type = ''
+                if input_data['accountType'].lower() == TypeEnum.Personal.value:
+                    account_type = TypeEnum.Personal.value
+                elif input_data['accountType'].lower() == TypeEnum.Issuer.value:
+                    account_type = TypeEnum.Issuer.value
+
+                account_id = insert_account_without_merchant(connection, cursor, account_type, '', '')
 
                 # - response -
                 self.send_response(200)
@@ -78,8 +115,8 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 
                 output_data = {
-                    "accountType": "personal",
-                    "accountId": "2fa606d2-9b42-41fc-9622-5f5ab2081082",
+                    "accountType": account_type,
+                    "accountId": account_id,
                     "balance": 0
                 }
                 self.wfile.write(dump_response(output_data))
