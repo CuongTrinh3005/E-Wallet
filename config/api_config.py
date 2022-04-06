@@ -16,6 +16,5 @@ request_methods = {
             'transaction_verify': '/transaction/verify',
             'transaction_cancel': '/transaction/cancel'
         }
-        
     ]
 }
