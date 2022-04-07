@@ -3,6 +3,7 @@ import jwt
 import datetime
 
 from config.db_config import execute_query
+from enums.StatusEnum import StatusEnum
 from enums.TypeEnum import TypeEnum
 
 
@@ -42,6 +43,29 @@ def check_valid_acc_type(connection, cursor, account_id, type_to_check = TypeEnu
 
 def topup(connection, cursor, account_id, amount):
     query_str = f"UPDATE accounts SET balance = balance + {amount} WHERE account_id = '{account_id}';"
+    execute_query(connection, cursor, query_str)
+
+
+def get_balance_of_account(connection, cursor, account_id):
+    query_str = f""" select balance from accounts 
+                    where account_id = '{account_id}' """
+    result = execute_query(connection, cursor, query_str)
+    balance = 0
+    if result:
+        balance = result[0][0]
+
+    print(f"\Balance of transaction id {balance}: ")
+    return balance
+
+def transfer(connection, cursor, transaction_id, income_account_id, outcome_account_id, amount):
+    query_str = f""" BEGIN; 
+                    UPDATE transactions SET status = '{StatusEnum.Verified.value}' 
+                        WHERE transaction_id = '{transaction_id}' and status = '{StatusEnum.Confirmed.value}';
+                    UPDATE accounts SET balance = balance - {amount} 
+                        WHERE account_id = '{outcome_account_id}'; 
+                    UPDATE accounts SET balance = balance + {amount} 
+                        WHERE account_id = '{income_account_id}'; 
+                    COMMIT; """
     execute_query(connection, cursor, query_str)
 
 def generate_jwt(account_id):

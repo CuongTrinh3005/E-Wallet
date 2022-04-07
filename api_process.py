@@ -6,8 +6,8 @@ from decorators.expired_decorator import timeout
 
 from enums.StatusEnum import StatusEnum
 from enums.TypeEnum import TypeEnum
-from services.account_services import check_valid_acc_type, decode_jwt
-from services.transaction_services import check_transaction_exist, create_signature, insert_new_transaction, update_transaction_status
+from services.account_services import check_valid_acc_type, decode_jwt, get_balance_of_account, transfer
+from services.transaction_services import check_transaction_exist, confirm_transaction_service, get_amount_of_transaction, get_amount_of_transaction_for_transfering, get_income_account_id, get_transaction_status, insert_new_transaction, update_transaction_status
 from decorators.expired_decorator import TimeoutError
 
 
@@ -28,7 +28,7 @@ def test(obj):
     obj.send_header("Content-Type", "application/json")
     obj.end_headers()
 
-    sleep_print()
+    # sleep_print()
     response = {
         "status": "OK",
         "message": "Get all merchants"
@@ -39,52 +39,55 @@ def test(obj):
 def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, signature):
     try:
         jwt_token = obj.headers['Authorization']
-        income_account_id = decode_jwt(jwt_token)
+        if not jwt_token:
+            obj.send_response(401)
+            obj.send_header('Content-type', 'text/json')
+            obj.end_headers()
+        else:
+            income_account_id = decode_jwt(jwt_token)
+            is_merchant_account = check_valid_acc_type(connection, cursor, income_account_id, TypeEnum.Merchant.value)
+            transaction_id = ''
+            if is_merchant_account == 1:
+                if amount > 0:
+                    # Assume error in creating process
+                    # x = 2/0
 
-        # connection, cursor = get_connection_and_cursor()
-        is_merchant_account = check_valid_acc_type(connection, cursor, income_account_id, TypeEnum.Merchant.value)
-        transaction_id = ''
-        if is_merchant_account == 1:
-            if amount > 0:
-                # Assume error in creating process
-                # x = 2/0
+                    # Assume error timeout in creating process
+                    # sleep_print()
 
-                # Assume error timeout in creating process
-                # sleep_print()
+                    transaction_id = insert_new_transaction(connection, cursor, merchant_id, income_account_id, 
+                                                            amount, extraData, signature, StatusEnum.Initialized.value)
 
-                transaction_id = insert_new_transaction(connection, cursor, merchant_id, income_account_id, 
-                                                        amount, extraData, signature, StatusEnum.Initialized.value)
-
-                # sleep_print()
-                
-                # - response -
-                obj.send_response(200)
-                obj.send_header('Content-type', 'text/json')
-                obj.end_headers()
-                
-                output_data = {
-                    "transactionId": transaction_id,
-                    "merchantId": merchant_id,
-                    "incomeAccount": income_account_id,
-                    "outcomeAccount": "",
-                    "amount": amount,
-                    "extraData": extraData,
-                    "signature": signature,
-                    "status": "INITIALIZED"
-                }
+                    # sleep_print()
+                    
+                    # - response -
+                    obj.send_response(200)
+                    obj.send_header('Content-type', 'text/json')
+                    obj.end_headers()
+                    
+                    output_data = {
+                        "transactionId": transaction_id,
+                        "merchantId": merchant_id,
+                        "incomeAccount": income_account_id,
+                        "outcomeAccount": "",
+                        "amount": amount,
+                        "extraData": extraData,
+                        "signature": signature,
+                        "status": "INITIALIZED"
+                    }
+                else:
+                    obj.send_response(400)
+                    obj.send_header('Content-type', 'text/json')
+                    obj.end_headers()
+                    
+                    output_data = {"message": "Amount must be larger than 0!"}
             else:
                 obj.send_response(400)
                 obj.send_header('Content-type', 'text/json')
                 obj.end_headers()
-                
-                output_data = {"message": "Amount must be larger than 0!"}
-        else:
-            obj.send_response(400)
-            obj.send_header('Content-type', 'text/json')
-            obj.end_headers()
-            output_data = {"message": "You need to be a merchant for creating transaction!"}
+                output_data = {"message": "You need to be a merchant for creating transaction!"}
 
-        obj.wfile.write(dump_response(output_data))
+            obj.wfile.write(dump_response(output_data))
     except TimeoutError:
         # If expired create new failed transaction
         if transaction_id != '':
@@ -128,6 +131,215 @@ def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, 
             "extraData": extraData,
             "signature": signature,
             "status": "FAILED",
-            "message": "Error occured in creating transaction!"
+            "message": "Error occured in creating transaction!",
+            "message_error": str(ex)
         }
         obj.wfile.write(dump_response(output_data))
+
+@timeout(5)
+def confirm_transaction(obj, connection, cursor, transaction_id):
+    try:
+        jwt_token = obj.headers['Authorization']
+        if not jwt_token:
+            obj.send_response(401)
+            obj.send_header('Content-type', 'text/json')
+            obj.end_headers()
+        else:
+            personal_account_id = decode_jwt(jwt_token)
+            # Assume error in creating process
+            # x = 2/0
+
+            # Assume error timeout in creating process
+            # sleep_print()
+
+            output_data = {}
+            is_existed = check_transaction_exist(connection, cursor, transaction_id)
+            if is_existed == 1:
+                is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
+                if is_personal_account == 1:
+                    transaction_amount = get_amount_of_transaction(connection, cursor, transaction_id)
+                    personal_account_balance = get_balance_of_account(connection, cursor, account_id=personal_account_id)
+                    if personal_account_balance >= transaction_amount:
+                        # Personal has enough balance to confirm transaction
+                        confirm_transaction_service(connection, cursor, transaction_id, personal_account_id)
+                        # - response -
+                        obj.send_response(200)
+                        obj.send_header('Content-type', 'text/json')
+                        obj.end_headers()
+                        
+                        output_data['code'] = "SUC"
+                        output_data['message'] = f"Transaction with id = {transaction_id} have been confirmed!"
+                    else:
+                        # is_existed = check_transaction_exist(connection, cursor, transaction_id)
+                        update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+
+                        obj.send_response(400)
+                        obj.send_header('Content-type', 'text/json')
+                        obj.end_headers()
+                        
+                        output_data['message'] = "Balance is not enough to confirm transaction!"
+                else:
+                    obj.send_response(400)
+                    obj.send_header('Content-type', 'text/json')
+                    obj.end_headers()
+                    output_data = {"message": "You need have a personal account for confirming transaction!"}
+
+                # obj.wfile.write(dump_response(output_data))
+            else:
+                obj.send_response(400)
+                obj.send_header('Content-type', 'text/json')
+                obj.end_headers()
+                output_data = {"message": "Transaction is not existed!"}
+
+            obj.wfile.write(dump_response(output_data))
+    
+    except TimeoutError:
+        # If expired confirm transaction
+        if transaction_id != '':
+            update_transaction_status(connection, cursor, transaction_id, StatusEnum.Expired.value)
+
+        obj.send_response(200)
+        obj.send_header('Content-type', 'text/json')
+        obj.end_headers()
+        
+        output_data = {
+            "transactionId": transaction_id,
+            "status": "EXPIRED",
+            "message": "Transaction is exceed the limit time!"
+        }
+        obj.wfile.write(dump_response(output_data))
+    except Exception as ex:
+        print("Exception: ", ex)
+        update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+        obj.send_response(200)
+        obj.send_header('Content-type', 'text/json')
+        obj.end_headers()
+        
+        output_data = {
+            "transactionId": transaction_id,
+            "message": "Error occured in confirming transaction! Try again!",
+            "message_error": str(ex)
+        }
+        obj.wfile.write(dump_response(output_data))
+
+@timeout(5)
+def verify_transaction(obj, connection, cursor, transaction_id):
+    try:
+        jwt_token = obj.headers['Authorization']
+        if not jwt_token:
+            obj.send_response(401)
+            obj.send_header('Content-type', 'text/json')
+            obj.end_headers()
+        else:
+            personal_account_id = decode_jwt(jwt_token)
+
+            # Assume error in creating process
+            # x = 2/0
+
+            # Assume error timeout in creating process
+            # sleep_print()
+
+            output_data = {}
+            is_existed = check_transaction_exist(connection, cursor, transaction_id)
+            send_message = True
+            if is_existed == 1:
+                merchant_account_id = get_income_account_id(connection, cursor, transaction_id)
+                is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
+                if is_personal_account == 1:
+                    transaction_amount = get_amount_of_transaction_for_transfering(connection, cursor, transaction_id)
+                    personal_account_balance = get_balance_of_account(connection, cursor, account_id=personal_account_id)
+                    if personal_account_balance >= transaction_amount:
+                        # Personal has enough balance to confirm transaction
+                        transfer(connection, cursor, transaction_id, merchant_account_id, personal_account_id, transaction_amount)
+                        # update_transaction_status(connection, cursor, transaction_id, StatusEnum.Completed.value)
+                        # - response -
+                        obj.send_response(200)
+                        obj.send_header('Content-type', 'text/json')
+                        obj.end_headers()
+                        send_message = False
+                    else:
+                        update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+
+                        obj.send_response(400)
+                        obj.send_header('Content-type', 'text/json')
+                        obj.end_headers()
+                        
+                        output_data['message'] = "Balance is not enough to verify transaction!"
+                else:
+                    obj.send_response(400)
+                    obj.send_header('Content-type', 'text/json')
+                    obj.end_headers()
+                    output_data = {"message": "You need have a personal account for verifying transaction!"}
+            else:
+                obj.send_response(400)
+                obj.send_header('Content-type', 'text/json')
+                obj.end_headers()
+                output_data = {"message": "Transaction is not existed!"}
+            if send_message:
+                obj.wfile.write(dump_response(output_data))
+    except TimeoutError:
+        # If expired confirm transaction
+        if transaction_id != '':
+            update_transaction_status(connection, cursor, transaction_id, StatusEnum.Expired.value)
+
+        obj.send_response(200)
+        obj.send_header('Content-type', 'text/json')
+        obj.end_headers()
+        
+        output_data = {
+            "transactionId": transaction_id,
+            "status": "EXPIRED",
+            "message": "Transaction is exceed the limit time!"
+        }
+        obj.wfile.write(dump_response(output_data))
+    except Exception as ex:
+        print("Exception: ", ex)
+        update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+        obj.send_response(200)
+        obj.send_header('Content-type', 'text/json')
+        obj.end_headers()
+        
+        output_data = {
+            "transactionId": transaction_id,
+            "message": "Error occured in verifying transaction! Try again!",
+            "message_error": str(ex)
+        }
+        obj.wfile.write(dump_response(output_data))
+
+def cancel_transaction(obj, connection, cursor, transaction_id):
+    jwt_token = obj.headers['Authorization']
+    if not jwt_token:
+            obj.send_response(401)
+            obj.send_header('Content-type', 'text/json')
+            obj.end_headers()
+    else:
+        personal_account_id = decode_jwt(jwt_token)
+
+        is_existed = check_transaction_exist(connection, cursor, transaction_id)
+        if is_existed == 1:
+            is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
+            if is_personal_account == 1:
+                status = get_transaction_status(connection, cursor, transaction_id)
+                if status != StatusEnum.Confirmed.value:
+                    obj.send_response(400)
+                    obj.send_header('Content-type', 'text/json')
+                    obj.end_headers()
+                    output_data = {"message": "Transaction must be confirmed before being canceled!"}
+                    obj.wfile.write(dump_response(output_data))
+                else:
+                    obj.send_response(200)
+                    obj.send_header('Content-type', 'text/json')
+                    obj.end_headers()
+                    update_transaction_status(connection, cursor, transaction_id, StatusEnum.Canceled.value)
+            else:
+                obj.send_response(400)
+                obj.send_header('Content-type', 'text/json')
+                obj.end_headers()
+                output_data = {"message": "You need have a personal account for canceling transaction!"}
+                obj.wfile.write(dump_response(output_data))
+        else:
+            obj.send_response(400)
+            obj.send_header('Content-type', 'text/json')
+            obj.end_headers()
+            output_data = {"message": "Transaction is not existed!"}
+            obj.wfile.write(dump_response(output_data))

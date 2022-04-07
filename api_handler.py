@@ -4,7 +4,7 @@ import http.server
 import socketserver
 from typing import Tuple
 from http import HTTPStatus
-from api_process import create_transaction, test
+from api_process import cancel_transaction, confirm_transaction, create_transaction, test, verify_transaction
 from config.api_config import request_methods
 from config.db_config import connect
 from decorators.expired_decorator import timeout
@@ -12,7 +12,7 @@ from enums.StatusEnum import StatusEnum
 from services.account_services import check_valid_acc_type, decode_jwt, generate_jwt, insert_account, insert_account_without_merchant, topup
 from services.merchant_services import insert_merchant
 from enums.TypeEnum import TypeEnum
-from services.transaction_services import create_signature, insert_new_transaction
+from services.transaction_services import create_signature, get_income_account_id, insert_new_transaction
 from utils.url_extractor import extract_account_id_in_url
 from decorators.expired_decorator import TimeoutError
 
@@ -75,7 +75,6 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == post_requests_dict['merchant_signup']:
             # - request -
             input_data = self.get_data_sent()
-            print(f'\nInput data: {input_data}\n')
             connection, cursor = get_connection_and_cursor()
             merchant_id, api_key = insert_merchant(connection, cursor, input_data['merchantName'], input_data['merchantUrl'])
             account_id = insert_account(connection, cursor, TypeEnum.Merchant.value, '', merchant_id)
@@ -121,32 +120,37 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
         elif self.path.find('account') > -1 and self.path.find('topup') > -1:
             jwt_token = self.headers['Authorization']
-            account_id = decode_jwt(jwt_token)
-            output_data = {}
-            connection, cursor = get_connection_and_cursor()
-            is_valid = check_valid_acc_type(connection, cursor, account_id)
-            if is_valid == 1:
-                output_data['valid_account_sender'] = True
-            else: 
-                output_data['valid_account_sender'] = False
-
-            input_data = self.get_data_sent()
-            receiver_account_id = input_data['accountId']
-            amount = float(input_data['amount'])
-
-            # is_personal_account = check_valid_acc_type(connection, cursor, uuid.UUID(receiver_account_id).hex, TypeEnum.Personal.value)
-            is_personal_account = check_valid_acc_type(connection, cursor, receiver_account_id, TypeEnum.Personal.value)
-            if amount <= 0 or is_personal_account == 0:
-                output_data['message'] = 'Receiver must be personal account and amount must be larger than 0'
-                self.send_response(400)
+            if not jwt_token:
+                self.send_response(401)
                 self.send_header('Content-type', 'text/json')
                 self.end_headers()
-                self.wfile.write(dump_response(output_data))
             else:
-                topup(connection, cursor, receiver_account_id, amount)
-                self.send_response(200)
-                self.send_header('Content-type', 'text/json')
-                self.end_headers()
+                account_id = decode_jwt(jwt_token)
+                output_data = {}
+                connection, cursor = get_connection_and_cursor()
+                is_valid = check_valid_acc_type(connection, cursor, account_id)
+                if is_valid == 1:
+                    output_data['valid_account_sender'] = True
+                else: 
+                    output_data['valid_account_sender'] = False
+
+                input_data = self.get_data_sent()
+                receiver_account_id = input_data['accountId']
+                amount = float(input_data['amount'])
+
+                # is_personal_account = check_valid_acc_type(connection, cursor, uuid.UUID(receiver_account_id).hex, TypeEnum.Personal.value)
+                is_personal_account = check_valid_acc_type(connection, cursor, receiver_account_id, TypeEnum.Personal.value)
+                if amount <= 0 or is_personal_account == 0:
+                    output_data['message'] = 'Receiver must be personal account and amount must be larger than 0'
+                    self.send_response(400)
+                    self.send_header('Content-type', 'text/json')
+                    self.end_headers()
+                    self.wfile.write(dump_response(output_data))
+                else:
+                    topup(connection, cursor, receiver_account_id, amount)
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/json')
+                    self.end_headers()
 
         elif self.path == post_requests_dict['transaction_create']:
             input_data = self.get_data_sent()
@@ -160,37 +164,26 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             create_transaction(self, connection, cursor, merchant_id, amount, extraData, signature)
 
         elif self.path == post_requests_dict['transaction_confirm']:
+            connection, cursor = get_connection_and_cursor()
             input_data = self.get_data_sent()
-            print(f'\nInput data: {input_data}\n')
 
-            # - response -
-            self.send_response(200)
-            self.send_header('Content-type', 'text/json')
-            self.end_headers()
-            
-            output_data = {
-                "code": "SUC",
-                "message": "string"
-            }
-            self.wfile.write(dump_response(output_data))
+            transaction_id = input_data['transactionId']
+
+            confirm_transaction(self, connection, cursor, transaction_id)
 
         elif self.path == post_requests_dict['transaction_verify']:
+            connection, cursor = get_connection_and_cursor()
             input_data = self.get_data_sent()
-            print(f'\nInput data: {input_data}\n')
 
-            # - response -
-            self.send_response(200)
-            self.send_header('Content-type', 'text/json')
-            self.end_headers()
+            transaction_id = input_data['transactionId']
+            verify_transaction(self, connection, cursor, transaction_id)
 
         elif self.path == post_requests_dict['transaction_cancel']:
+            connection, cursor = get_connection_and_cursor()
             input_data = self.get_data_sent()
-            print(f'\nInput data: {input_data}\n')
 
-            # - response -
-            self.send_response(200)
-            self.send_header('Content-type', 'text/json')
-            self.end_headers()
+            transaction_id = input_data['transactionId']
+            cancel_transaction(self, connection, cursor, transaction_id)
 
     def get_data_sent(self):
         content_length = int(self.headers['Content-Length'])
