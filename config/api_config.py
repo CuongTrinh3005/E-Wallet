@@ -14,7 +14,8 @@ request_methods = {
             'transaction_create': '/transaction/create',
             'transaction_confirm': '/transaction/confirm',
             'transaction_verify': '/transaction/verify',
-            'transaction_cancel': '/transaction/cancel'
+            'transaction_cancel': '/transaction/cancel',
+            'change_order_status': '/merchant/change-order-status'
         }
     ]
 }

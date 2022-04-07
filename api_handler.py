@@ -12,7 +12,7 @@ from enums.StatusEnum import StatusEnum
 from services.account_services import check_valid_acc_type, decode_jwt, generate_jwt, insert_account, insert_account_without_merchant, topup
 from services.merchant_services import insert_merchant
 from enums.TypeEnum import TypeEnum
-from services.transaction_services import create_signature, get_income_account_id, insert_new_transaction
+from services.transaction_services import create_signature, get_income_account_id, insert_new_transaction, update_order_status
 from utils.url_extractor import extract_account_id_in_url
 from decorators.expired_decorator import TimeoutError
 
@@ -184,6 +184,19 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
             transaction_id = input_data['transactionId']
             cancel_transaction(self, connection, cursor, transaction_id)
+
+        elif self.path == post_requests_dict['change_order_status']:
+            input_data = self.get_data_sent()
+            self.send_response(200)
+            self.send_header('Content-type', 'text/json')
+            self.end_headers()
+            
+            output_data = {
+                "order_id": input_data['order_id'],
+                "status": input_data['status']
+            }
+            update_order_status(data=output_data)
+            self.wfile.write(dump_response(output_data))
 
     def get_data_sent(self):
         content_length = int(self.headers['Content-Length'])

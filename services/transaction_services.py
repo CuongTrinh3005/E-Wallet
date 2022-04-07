@@ -2,6 +2,8 @@ import hashlib
 import json
 from config.db_config import execute_query
 from enums.StatusEnum import StatusEnum
+import requests
+import json
 
 
 def insert_new_transaction(connection, cursor, merchant_id, income_account_id, amount, extra_data, signature, status):
@@ -70,6 +72,16 @@ def get_transaction_status(connection, cursor, transaction_id):
     print(f"\nstatus of transaction : {status} ")
     return status
 
+
+def update_order_status(data):
+    headers = {
+        "Content-Type": "application/json; charset=utf-8"
+        }
+    res = requests.post(
+        url='http://127.0.0.1:5000/order/change-order-status', 
+        data=json.dumps(data), 
+        headers=headers)
+
 def get_income_account_id(connection, cursor, transaction_id):
     query_str = f""" select income_account_id from transactions 
                     where transaction_id = '{transaction_id}' """
@@ -80,6 +92,17 @@ def get_income_account_id(connection, cursor, transaction_id):
 
     print(f"\nincome_account_id of transaction id {income_account_id}")
     return income_account_id
+
+def get_extra_data(connection, cursor, transaction_id):
+    query_str = f""" select extra_data from transactions 
+                    where transaction_id = '{transaction_id}' """
+    result = execute_query(connection, cursor, query_str)
+    extra_data = ''
+    if result:
+        extra_data = result[0][0]
+
+    print(f"\nextra_data of transaction id {extra_data}")
+    return int(extra_data)
 
 def create_signature(merchant_id, amount, extraData):
     payload = {

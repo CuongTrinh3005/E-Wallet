@@ -7,7 +7,7 @@ from decorators.expired_decorator import timeout
 from enums.StatusEnum import StatusEnum
 from enums.TypeEnum import TypeEnum
 from services.account_services import check_valid_acc_type, decode_jwt, get_balance_of_account, transfer
-from services.transaction_services import check_transaction_exist, confirm_transaction_service, get_amount_of_transaction, get_amount_of_transaction_for_transfering, get_income_account_id, get_transaction_status, insert_new_transaction, update_transaction_status
+from services.transaction_services import check_transaction_exist, confirm_transaction_service, get_amount_of_transaction, get_amount_of_transaction_for_transfering, get_extra_data, get_income_account_id, get_transaction_status, insert_new_transaction, update_order_status, update_transaction_status
 from decorators.expired_decorator import TimeoutError
 
 
@@ -98,6 +98,11 @@ def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, 
             else:
                 update_transaction_status(connection, cursor, transaction_id, StatusEnum.Expired.value)
 
+            data = {
+                "order_id": extraData,
+                "status": StatusEnum.Expired.value
+            }
+            update_order_status(data=data)
         obj.send_response(200)
         obj.send_header('Content-type', 'text/json')
         obj.end_headers()
@@ -118,6 +123,12 @@ def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, 
         print("Exception: ", ex)
         transaction_id = insert_new_transaction(connection, cursor, merchant_id, income_account_id, 
                                                         amount, extraData, signature, StatusEnum.Failed.value)
+        data = {
+                "order_id": extraData,
+                "status": StatusEnum.Failed.value
+            }
+        update_order_status(data=data)
+
         obj.send_response(200)
         obj.send_header('Content-type', 'text/json')
         obj.end_headers()
@@ -156,12 +167,18 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
             is_existed = check_transaction_exist(connection, cursor, transaction_id)
             if is_existed == 1:
                 is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
+                extraData = get_extra_data(connection, cursor, transaction_id)
                 if is_personal_account == 1:
                     transaction_amount = get_amount_of_transaction(connection, cursor, transaction_id)
                     personal_account_balance = get_balance_of_account(connection, cursor, account_id=personal_account_id)
                     if personal_account_balance >= transaction_amount:
                         # Personal has enough balance to confirm transaction
                         confirm_transaction_service(connection, cursor, transaction_id, personal_account_id)
+                        data = {
+                            "order_id": extraData,
+                            "status": StatusEnum.Confirmed.value
+                        }
+                        update_order_status(data=data)
                         # - response -
                         obj.send_response(200)
                         obj.send_header('Content-type', 'text/json')
@@ -172,6 +189,12 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
                     else:
                         # is_existed = check_transaction_exist(connection, cursor, transaction_id)
                         update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+                        extraData = get_extra_data(connection, cursor, transaction_id)
+                        data = {
+                            "order_id": extraData,
+                            "status": StatusEnum.Failed.value
+                        }
+                        update_order_status(data=data)
 
                         obj.send_response(400)
                         obj.send_header('Content-type', 'text/json')
@@ -197,7 +220,12 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
         # If expired confirm transaction
         if transaction_id != '':
             update_transaction_status(connection, cursor, transaction_id, StatusEnum.Expired.value)
-
+            extraData = get_extra_data(connection, cursor, transaction_id)
+            data = {
+                "order_id": extraData,
+                "status": StatusEnum.Expired.value
+            }
+            update_order_status(data=data)
         obj.send_response(200)
         obj.send_header('Content-type', 'text/json')
         obj.end_headers()
@@ -211,6 +239,12 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
     except Exception as ex:
         print("Exception: ", ex)
         update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+        extraData = get_extra_data(connection, cursor, transaction_id)
+        data = {
+            "order_id": extraData,
+            "status": StatusEnum.Failed.value
+        }
+        update_order_status(data=data)
         obj.send_response(200)
         obj.send_header('Content-type', 'text/json')
         obj.end_headers()
@@ -237,12 +271,13 @@ def verify_transaction(obj, connection, cursor, transaction_id):
             # x = 2/0
 
             # Assume error timeout in creating process
-            # sleep_print()
+            sleep_print()
 
             output_data = {}
             is_existed = check_transaction_exist(connection, cursor, transaction_id)
             send_message = True
             if is_existed == 1:
+                extraData = get_extra_data(connection, cursor, transaction_id)
                 merchant_account_id = get_income_account_id(connection, cursor, transaction_id)
                 is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
                 if is_personal_account == 1:
@@ -251,7 +286,12 @@ def verify_transaction(obj, connection, cursor, transaction_id):
                     if personal_account_balance >= transaction_amount:
                         # Personal has enough balance to confirm transaction
                         transfer(connection, cursor, transaction_id, merchant_account_id, personal_account_id, transaction_amount)
-                        # update_transaction_status(connection, cursor, transaction_id, StatusEnum.Completed.value)
+                        update_transaction_status(connection, cursor, transaction_id, StatusEnum.Completed.value)
+                        data = {
+                            "order_id": extraData,
+                            "status": StatusEnum.Completed.value
+                        }
+                        update_order_status(data=data)
                         # - response -
                         obj.send_response(200)
                         obj.send_header('Content-type', 'text/json')
@@ -259,6 +299,11 @@ def verify_transaction(obj, connection, cursor, transaction_id):
                         send_message = False
                     else:
                         update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+                        data = {
+                            "order_id": extraData,
+                            "status": StatusEnum.Failed.value
+                        }
+                        update_order_status(data=data)
 
                         obj.send_response(400)
                         obj.send_header('Content-type', 'text/json')
@@ -281,7 +326,12 @@ def verify_transaction(obj, connection, cursor, transaction_id):
         # If expired confirm transaction
         if transaction_id != '':
             update_transaction_status(connection, cursor, transaction_id, StatusEnum.Expired.value)
-
+            extraData = get_extra_data(connection, cursor, transaction_id)
+            data = {
+                "order_id": extraData,
+                "status": StatusEnum.Expired.value
+            }
+            update_order_status(data=data)
         obj.send_response(200)
         obj.send_header('Content-type', 'text/json')
         obj.end_headers()
@@ -295,6 +345,12 @@ def verify_transaction(obj, connection, cursor, transaction_id):
     except Exception as ex:
         print("Exception: ", ex)
         update_transaction_status(connection, cursor, transaction_id, StatusEnum.Failed.value)
+        extraData = get_extra_data(connection, cursor, transaction_id)
+        data = {
+            "order_id": extraData,
+            "status": StatusEnum.Failed.value
+        }
+        update_order_status(data=data)
         obj.send_response(200)
         obj.send_header('Content-type', 'text/json')
         obj.end_headers()
@@ -307,6 +363,7 @@ def verify_transaction(obj, connection, cursor, transaction_id):
         obj.wfile.write(dump_response(output_data))
 
 def cancel_transaction(obj, connection, cursor, transaction_id):
+    extraData = ''
     jwt_token = obj.headers['Authorization']
     if not jwt_token:
             obj.send_response(401)
@@ -317,6 +374,7 @@ def cancel_transaction(obj, connection, cursor, transaction_id):
 
         is_existed = check_transaction_exist(connection, cursor, transaction_id)
         if is_existed == 1:
+            extraData = get_extra_data(connection, cursor, transaction_id)
             is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
             if is_personal_account == 1:
                 status = get_transaction_status(connection, cursor, transaction_id)
@@ -331,6 +389,11 @@ def cancel_transaction(obj, connection, cursor, transaction_id):
                     obj.send_header('Content-type', 'text/json')
                     obj.end_headers()
                     update_transaction_status(connection, cursor, transaction_id, StatusEnum.Canceled.value)
+                    data = {
+                        "order_id": extraData,
+                        "status": StatusEnum.Canceled.value
+                    }
+                    update_order_status(data=data)
             else:
                 obj.send_response(400)
                 obj.send_header('Content-type', 'text/json')
