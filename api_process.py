@@ -21,7 +21,7 @@ def sleep_print():
         time.sleep(1)
         print("%d seconds have passed" % i)
 
-@timeout(5)
+@timeout(300)
 # @token_required
 def test(obj):
     obj.send_response(HTTPStatus.OK)
@@ -35,7 +35,7 @@ def test(obj):
     }
     obj.wfile.write(dump_response(response))
 
-@timeout(5)
+@timeout(300)
 def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, signature):
     try:
         jwt_token = obj.headers['Authorization']
@@ -148,7 +148,7 @@ def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, 
         }
         obj.wfile.write(dump_response(output_data))
 
-@timeout(5)
+@timeout(300)
 def confirm_transaction(obj, connection, cursor, transaction_id):
     try:
         jwt_token = obj.headers['Authorization']
@@ -257,7 +257,7 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
         }
         obj.wfile.write(dump_response(output_data))
 
-@timeout(5)
+@timeout(300)
 def verify_transaction(obj, connection, cursor, transaction_id):
     try:
         jwt_token = obj.headers['Authorization']
