@@ -1,3 +1,4 @@
+from datetime import datetime
 import hashlib
 import json
 from config.db_config import execute_query
@@ -81,6 +82,8 @@ def update_order_status(data):
         url='http://127.0.0.1:5000/order/change-order-status', 
         data=json.dumps(data), 
         headers=headers)
+    
+    return res.status_code
 
 def get_income_account_id(connection, cursor, transaction_id):
     query_str = f""" select income_account_id from transactions 
@@ -112,3 +115,41 @@ def create_signature(merchant_id, amount, extraData):
     }
 
     return hashlib.md5(json.dumps(payload).encode('utf-8')).hexdigest()
+
+def check_transaction_expire(conn, cur):
+    # get list transaction
+    command_select = f""" SELECT transaction_id, created_at, extra_data 
+                        FROM transactions 
+                        WHERE status!='{StatusEnum.Completed.value}' 
+                        AND status!='{StatusEnum.Canceled.value}' 
+                        AND status!='{StatusEnum.Failed.value}' 
+                        AND status!='{StatusEnum.Expired.value}'  """
+
+    cur.execute(command_select)
+    trans=cur.fetchall()
+    if(len(trans)<=0):
+        print ("no transaction found !!!")
+        return
+
+    for tran in trans:
+        # _datetime=datetime.strptime(tran[1],"YYYY-MM-DD HH:MM:SS")
+        _datetime=tran[1]
+        distance = datetime.now() - _datetime
+        a_minute = 60
+        if distance.total_seconds() > (5*a_minute):
+        # update transaction staus to expire
+            # call api update order status
+            data = {
+                "order_id": tran[2],
+                "status": StatusEnum.Expired.value
+            }
+            status_code = update_order_status(data=data)  
+            if status_code == 200:
+                command_update = f"""UPDATE transactions 
+                                    SET status='{StatusEnum.Expired.value}' 
+                                    WHERE transaction_id='{tran[0]}' """
+
+                cur.execute(command_update)
+                conn.commit()
+
+                print(f"\nUpdate status for transaction id = {tran[0]} - order id = {tran[2]}")

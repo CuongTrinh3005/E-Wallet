@@ -1,8 +1,11 @@
+from sched import scheduler
 import socketserver
 import psycopg2
+from apscheduler.schedulers.background import BackgroundScheduler
 from api_handler import APIHandler
 
 from config.db_config import close_connection, connect, create_all_tables
+from services.transaction_services import check_transaction_expire
 
 
 if __name__ == "__main__":
@@ -15,6 +18,11 @@ if __name__ == "__main__":
 
         print("Checking for creating tables")
         create_all_tables(connection, cursor)
+
+        # Create scheduler
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(lambda:check_transaction_expire(connection, cursor), 'interval', seconds=5)
+        scheduler.start()
 
         PORT = 8000
         # Create an object of the above class
