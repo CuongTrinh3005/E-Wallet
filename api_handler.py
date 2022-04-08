@@ -1,5 +1,4 @@
 import json
-import time
 import http.server
 import socketserver
 from typing import Tuple
@@ -7,12 +6,11 @@ from http import HTTPStatus
 from api_process import cancel_transaction, confirm_transaction, create_transaction, test, verify_transaction
 from config.api_config import request_methods
 from config.db_config import connect
-from decorators.expired_decorator import timeout
-from enums.StatusEnum import StatusEnum
-from services.account_services import check_valid_acc_type, decode_jwt, generate_jwt, insert_account, insert_account_without_merchant, topup
+
+from services.account_services import check_valid_acc_type, decode_jwt, decode_merchant_jwt, generate_jwt, insert_account, insert_account_without_merchant, topup
 from services.merchant_services import insert_merchant
 from enums.TypeEnum import TypeEnum
-from services.transaction_services import create_signature, get_income_account_id, insert_new_transaction, update_order_status
+from services.transaction_services import create_signature, update_order_status
 from utils.url_extractor import extract_account_id_in_url
 from decorators.expired_decorator import TimeoutError
 
@@ -57,14 +55,16 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
                 print("In try-catch block!")
 
         elif self.path.find('account') > -1 and self.path.find('token') > -1:
+            connection, cursor = get_connection_and_cursor()
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
 
             account_id = extract_account_id_in_url(self.path)
-            jwt_token_list = generate_jwt(account_id)
+            jwt_token = generate_jwt(account_id, connection, cursor)
  
-            self.wfile.write(bytes(jwt_token_list, 'utf-8'))
+            # self.wfile.write(bytes(jwt_token, 'utf-8'))
+            self.wfile.write((json.dumps(jwt_token).encode('utf-8')))
 
 
     def do_POST(self):
@@ -197,6 +197,41 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
             }
             update_order_status(data=output_data)
             self.wfile.write(dump_response(output_data))
+
+        elif self.path == '/decode/merchant':
+            connection, cursor = get_connection_and_cursor()
+            input_data = self.get_data_sent()
+            token = input_data['token']
+            merchant_id = input_data['merchant_id']
+
+            merchant_account_id = decode_merchant_jwt(token, connection, cursor, merchant_id)
+
+            self.send_response(200)
+            self.send_header('Content-type', 'text/json')
+            self.end_headers()
+
+            output_data = {
+                "merchant_account_id": merchant_account_id
+            }
+            
+            self.wfile.write(dump_response(output_data))
+
+        elif self.path == '/decode/notmerchant':
+            input_data = self.get_data_sent()
+            token = input_data['token']
+
+            account_id = decode_jwt(token)
+
+            self.send_response(200)
+            self.send_header('Content-type', 'text/json')
+            self.end_headers()
+
+            output_data = {
+                "account_id": account_id
+            }
+            
+            self.wfile.write(dump_response(output_data))
+
 
     def get_data_sent(self):
         content_length = int(self.headers['Content-Length'])

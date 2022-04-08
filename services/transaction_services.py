@@ -102,7 +102,7 @@ def get_extra_data(connection, cursor, transaction_id):
         extra_data = result[0][0]
 
     print(f"\nextra_data of transaction id {extra_data}")
-    return int(extra_data)
+    return extra_data
 
 def create_signature(merchant_id, amount, extraData):
     payload = {

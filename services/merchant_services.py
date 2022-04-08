@@ -15,4 +15,11 @@ def insert_merchant(connection, cursor, merchant_name, merchant_url):
         print('\nCan not get merchant id')
         return None, str(api_key)
     
-    
+def get_api_key(connection, cursor, merchant_id):
+    query_str = f""" select api_key from merchants 
+                    where merchant_id = '{merchant_id}' """
+    result = execute_query(connection, cursor, query_str)
+    id_of_merchant = result[0][0]
+
+    print(f"\Balance of transaction id {id_of_merchant}: ")
+    return id_of_merchant

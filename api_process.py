@@ -6,7 +6,7 @@ from decorators.expired_decorator import timeout
 
 from enums.StatusEnum import StatusEnum
 from enums.TypeEnum import TypeEnum
-from services.account_services import check_valid_acc_type, decode_jwt, get_balance_of_account, transfer
+from services.account_services import check_valid_acc_type, decode_jwt, decode_merchant_jwt, get_balance_of_account, transfer
 from services.transaction_services import check_transaction_exist, confirm_transaction_service, get_amount_of_transaction, get_amount_of_transaction_for_transfering, get_extra_data, get_income_account_id, get_transaction_status, insert_new_transaction, update_order_status, update_transaction_status
 from decorators.expired_decorator import TimeoutError
 
@@ -44,7 +44,8 @@ def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, 
             obj.send_header('Content-type', 'text/json')
             obj.end_headers()
         else:
-            income_account_id = decode_jwt(jwt_token)
+            income_account_id = decode_merchant_jwt(jwt_token, connection, cursor, merchant_id)
+            print("/n Income account id: ", income_account_id)
             is_merchant_account = check_valid_acc_type(connection, cursor, income_account_id, TypeEnum.Merchant.value)
             transaction_id = ''
             if is_merchant_account == 1:
@@ -271,7 +272,7 @@ def verify_transaction(obj, connection, cursor, transaction_id):
             # x = 2/0
 
             # Assume error timeout in creating process
-            sleep_print()
+            # sleep_print()
 
             output_data = {}
             is_existed = check_transaction_exist(connection, cursor, transaction_id)
