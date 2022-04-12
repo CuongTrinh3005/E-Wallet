@@ -69,7 +69,6 @@ class APIHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         post_requests_dict = request_methods['POST_METHOD'][0]
-        post_requests = list(post_requests_dict.values()) 
 
         # if self.path in post_requests:
         if self.path == post_requests_dict['merchant_signup']:

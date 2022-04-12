@@ -1,6 +1,7 @@
 import json
 from http import HTTPStatus
 import time
+from config.db_config import close_connection
 
 from decorators.expired_decorator import timeout
 
@@ -147,6 +148,8 @@ def create_transaction(obj, connection, cursor, merchant_id, amount, extraData, 
             "message_error": str(ex)
         }
         obj.wfile.write(dump_response(output_data))
+    finally:
+        close_connection(cursor)
 
 @timeout(300)
 def confirm_transaction(obj, connection, cursor, transaction_id):
@@ -166,7 +169,8 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
 
             output_data = {}
             is_existed = check_transaction_exist(connection, cursor, transaction_id)
-            if is_existed == 1:
+            status = get_transaction_status(connection, cursor, transaction_id)
+            if is_existed == 1 and status == StatusEnum.Initialized.value:
                 is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
                 extraData = get_extra_data(connection, cursor, transaction_id)
                 if is_personal_account == 1:
@@ -213,7 +217,7 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
                 obj.send_response(400)
                 obj.send_header('Content-type', 'text/json')
                 obj.end_headers()
-                output_data = {"message": "Transaction is not existed!"}
+                output_data = {"message": f"Transaction is not existed or its status is not {StatusEnum.Initialized.value} to confirm!"}
 
             obj.wfile.write(dump_response(output_data))
     
@@ -256,6 +260,8 @@ def confirm_transaction(obj, connection, cursor, transaction_id):
             "message_error": str(ex)
         }
         obj.wfile.write(dump_response(output_data))
+    finally:
+        close_connection(cursor)
 
 @timeout(300)
 def verify_transaction(obj, connection, cursor, transaction_id):
@@ -276,8 +282,9 @@ def verify_transaction(obj, connection, cursor, transaction_id):
 
             output_data = {}
             is_existed = check_transaction_exist(connection, cursor, transaction_id)
+            status = get_transaction_status(connection, cursor, transaction_id)
             send_message = True
-            if is_existed == 1:
+            if is_existed == 1 and status == StatusEnum.Confirmed.value:
                 extraData = get_extra_data(connection, cursor, transaction_id)
                 merchant_account_id = get_income_account_id(connection, cursor, transaction_id)
                 is_personal_account = check_valid_acc_type(connection, cursor, personal_account_id, TypeEnum.Personal.value)
@@ -286,7 +293,15 @@ def verify_transaction(obj, connection, cursor, transaction_id):
                     personal_account_balance = get_balance_of_account(connection, cursor, account_id=personal_account_id)
                     if personal_account_balance >= transaction_amount:
                         # Personal has enough balance to confirm transaction
+                        update_transaction_status(connection, cursor, transaction_id, StatusEnum.Verified.value)
+                        data = {
+                            "order_id": extraData,
+                            "status": StatusEnum.Verified.value
+                        }
+                        update_order_status(data=data)
+
                         transfer(connection, cursor, transaction_id, merchant_account_id, personal_account_id, transaction_amount)
+                        
                         update_transaction_status(connection, cursor, transaction_id, StatusEnum.Completed.value)
                         data = {
                             "order_id": extraData,
@@ -320,7 +335,7 @@ def verify_transaction(obj, connection, cursor, transaction_id):
                 obj.send_response(400)
                 obj.send_header('Content-type', 'text/json')
                 obj.end_headers()
-                output_data = {"message": "Transaction is not existed!"}
+                output_data = {"message": f"Transaction is not existed or its status is not {StatusEnum.Confirmed.value} to verify!"}
             if send_message:
                 obj.wfile.write(dump_response(output_data))
     except TimeoutError:
@@ -362,6 +377,8 @@ def verify_transaction(obj, connection, cursor, transaction_id):
             "message_error": str(ex)
         }
         obj.wfile.write(dump_response(output_data))
+    finally:
+        close_connection(cursor)
 
 def cancel_transaction(obj, connection, cursor, transaction_id):
     extraData = ''

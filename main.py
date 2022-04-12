@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
         # Create scheduler
         scheduler = BackgroundScheduler()
-        scheduler.add_job(lambda:check_transaction_expire(connection, cursor), 'interval', seconds=5)
+        scheduler.add_job(lambda:check_transaction_expire(connection, cursor), 'interval', seconds=60)
         scheduler.start()
 
         PORT = 8000

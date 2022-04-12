@@ -2,7 +2,8 @@ import psycopg2
 
 
 # CONFIG DATABASE
-DB_NAME = 'e_wallet'
+# DB_NAME = 'e_wallet'
+DB_NAME = 'e_wallet1'
 HOST = "localhost"
 USER = "admin"
 PASSWORD = "admin"
@@ -79,6 +80,7 @@ def create_table_transaction(connection, cursor):
             extra_data VARCHAR(255),
             signature VARCHAR(255),
             status VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
 
             PRIMARY KEY (transaction_id), 
             CONSTRAINT fk_merchant 
